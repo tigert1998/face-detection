@@ -4,12 +4,24 @@ sys.path.append("third_party/AdaFace")
 
 import os
 import pickle
+from typing import List, Tuple
 
 from tqdm import tqdm
 import PIL.Image
 import numpy as np
 from inference import load_pretrained_model, to_input
 from sklearn.neighbors import KNeighborsClassifier
+
+
+class FaceFindResult:
+    paths: List[str]
+    dists: List[float]
+    bboxes: List[List[float]]
+
+    def __init__(self):
+        self.paths = []
+        self.dists = []
+        self.bboxes = []
 
 
 class AdaFaceFinder:
@@ -31,7 +43,7 @@ class AdaFaceFinder:
             self.logger.error(f"Face detection Failed due to error: {e}")
             faces = None
 
-        return faces
+        return faces, bboxes
 
     def __init__(self, db_path, logger, device="cuda:0"):
         self.device = device
@@ -48,7 +60,7 @@ class AdaFaceFinder:
                 img_path = os.path.join(db_path, filename)
                 if os.path.splitext(img_path)[-1].lower() not in [".jpg", ".png"]:
                     continue
-                features = self._extract_features(img_path)
+                features, _ = self._extract_features(img_path)
                 self.dic[img_path] = features[0]
             with open(pkl_path, "wb") as f:
                 pickle.dump(self.dic, f)
@@ -60,30 +72,36 @@ class AdaFaceFinder:
 
     def _extract_features(self, img):
         if isinstance(img, PIL.Image.Image):
-            aligned_rgb_imgs = self.get_aligned_faces(
+            aligned_rgb_imgs, bboxes = self.get_aligned_faces(
                 image_path=None, rgb_pil_image=img
             )
         else:
-            aligned_rgb_imgs = self.get_aligned_faces(img)
+            aligned_rgb_imgs, bboxes = self.get_aligned_faces(img)
         features = []
         for aligned_rgb_img in aligned_rgb_imgs:
             bgr_input = to_input(aligned_rgb_img)
             feature, _ = self.model(bgr_input.to(self.device))
             feature = feature.detach().cpu().numpy()
             features.append(feature)
-        return features
+        return features, bboxes
 
     def face_find(self, rgb_frame, distance_threshold=None):
+        res = FaceFindResult()
+        failed_res = FaceFindResult()
         img = PIL.Image.fromarray(rgb_frame.astype("uint8"), "RGB")
-        features = self._extract_features(img)
+        features, bboxes = self._extract_features(img)
         if len(features) == 0:
-            return [], []
+            return res, failed_res
+
         dists, idxs = self.knn.kneighbors(np.concatenate(features, axis=0))
-        ans_path = []
-        ans_dist = []
-        for idx, dist in zip(idxs, dists):
+
+        for idx, dist, bbox in zip(idxs, dists, bboxes):
             if distance_threshold is not None and dist > distance_threshold:
-                continue
-            ans_path.append(self.img_paths[idx[0]])
-            ans_dist.append(dist[0])
-        return ans_path, ans_dist
+                failed_res.paths.append(self.img_paths[idx[0]])
+                failed_res.dists.append(dist[0])
+                failed_res.bboxes.append(bbox)
+            else:
+                res.paths.append(self.img_paths[idx[0]])
+                res.dists.append(dist[0])
+                res.bboxes.append(bbox)
+        return res, failed_res
