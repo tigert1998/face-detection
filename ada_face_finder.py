@@ -73,10 +73,17 @@ class AdaFaceFinder:
             features.append(feature)
         return features
 
-    def face_find(self, rgb_frame):
+    def face_find(self, rgb_frame, distance_threshold=None):
         img = PIL.Image.fromarray(rgb_frame.astype("uint8"), "RGB")
         features = self._extract_features(img)
         if len(features) == 0:
             return [], []
         dists, idxs = self.knn.kneighbors(np.concatenate(features, axis=0))
-        return [self.img_paths[idx[0]] for idx in idxs], [dist[0] for dist in dists]
+        ans_path = []
+        ans_dist = []
+        for idx, dist in zip(idxs, dists):
+            if distance_threshold is not None and dist > distance_threshold:
+                continue
+            ans_path.append(self.img_paths[idx[0]])
+            ans_dist.append(dist[0])
+        return ans_path, ans_dist
