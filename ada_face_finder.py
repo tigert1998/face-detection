@@ -28,14 +28,14 @@ class AdaFaceFinder:
         try:
             bboxes, faces = mtcnn_model.align_multi(img, limit=4)
         except Exception as e:
-            print("Face detection Failed due to error.")
-            print(e)
+            self.logger.error(f"Face detection Failed due to error: {e}")
             faces = None
 
         return faces
 
-    def __init__(self, db_path, device="cuda:0"):
+    def __init__(self, db_path, logger, device="cuda:0"):
         self.device = device
+        self.logger = logger
         self.model = load_pretrained_model("ir_50")
         self.model.to(self.device)
         pkl_path = os.path.join(db_path, "adaface.pkl")
