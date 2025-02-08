@@ -11,6 +11,7 @@ import PIL.Image
 import numpy as np
 import torch
 from inference import load_pretrained_model, to_input
+from face_alignment import mtcnn
 from sklearn.neighbors import KNeighborsClassifier
 
 
@@ -27,9 +28,6 @@ class FaceFindResult:
 
 class AdaFaceFinder:
     def get_aligned_faces(self, image_path, rgb_pil_image=None):
-        from face_alignment import mtcnn
-
-        mtcnn_model = mtcnn.MTCNN(device=self.device, crop_size=self.crop_size)
         if rgb_pil_image is None:
             img = PIL.Image.open(image_path).convert("RGB")
         else:
@@ -39,7 +37,7 @@ class AdaFaceFinder:
             img = rgb_pil_image
         # find face
         try:
-            bboxes, faces = mtcnn_model.align_multi(img, limit=4)
+            bboxes, faces = self.mtcnn_model.align_multi(img, limit=4)
         except Exception as e:
             self.logger.error(f"Face detection Failed due to error: {e}")
             faces = None
@@ -55,8 +53,9 @@ class AdaFaceFinder:
         ]
 
         self.device = device
-        self.logger = logger
         self.crop_size = (112, 112)
+        self.mtcnn_model = mtcnn.MTCNN(device=self.device, crop_size=self.crop_size)
+        self.logger = logger
         self.model = load_pretrained_model("ir_50")
         self.model.to(self.device)
         pkl_path = os.path.join(db_path, "adaface.pkl")
