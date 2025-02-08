@@ -46,20 +46,26 @@ class AdaFaceFinder:
         return faces, bboxes
 
     def __init__(self, db_path, logger, device="cuda:0"):
+        img_paths = [
+            os.path.join(db_path, filename)
+            for filename in os.listdir(db_path)
+            if os.path.splitext(filename)[-1].lower() in [".jpg", ".png"]
+        ]
+
         self.device = device
         self.logger = logger
         self.model = load_pretrained_model("ir_50")
         self.model.to(self.device)
         pkl_path = os.path.join(db_path, "adaface.pkl")
+        is_pkl_changed = True
         if os.path.exists(pkl_path):
             with open(pkl_path, "rb") as f:
                 self.dic = pickle.load(f)
-        else:
+            is_pkl_changed = set(self.dic.keys()) != set(img_paths)
+
+        if is_pkl_changed:
             self.dic = {}
-            for filename in tqdm(os.listdir(db_path)):
-                img_path = os.path.join(db_path, filename)
-                if os.path.splitext(img_path)[-1].lower() not in [".jpg", ".png"]:
-                    continue
+            for img_path in tqdm(img_paths):
                 features, _ = self._extract_features(img_path)
                 self.dic[img_path] = features[0]
             with open(pkl_path, "wb") as f:
