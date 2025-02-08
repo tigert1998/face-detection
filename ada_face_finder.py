@@ -9,6 +9,7 @@ from typing import List, Tuple
 from tqdm import tqdm
 import PIL.Image
 import numpy as np
+import torch
 from inference import load_pretrained_model, to_input
 from sklearn.neighbors import KNeighborsClassifier
 
@@ -28,7 +29,7 @@ class AdaFaceFinder:
     def get_aligned_faces(self, image_path, rgb_pil_image=None):
         from face_alignment import mtcnn
 
-        mtcnn_model = mtcnn.MTCNN(device=self.device, crop_size=(112, 112))
+        mtcnn_model = mtcnn.MTCNN(device=self.device, crop_size=self.crop_size)
         if rgb_pil_image is None:
             img = PIL.Image.open(image_path).convert("RGB")
         else:
@@ -42,6 +43,7 @@ class AdaFaceFinder:
         except Exception as e:
             self.logger.error(f"Face detection Failed due to error: {e}")
             faces = None
+            bboxes = None
 
         return faces, bboxes
 
@@ -54,6 +56,7 @@ class AdaFaceFinder:
 
         self.device = device
         self.logger = logger
+        self.crop_size = (112, 112)
         self.model = load_pretrained_model("ir_50")
         self.model.to(self.device)
         pkl_path = os.path.join(db_path, "adaface.pkl")
@@ -75,6 +78,19 @@ class AdaFaceFinder:
         x = np.concatenate(list(self.dic.values()), axis=0)
         self.img_paths = list(self.dic.keys())
         self.knn.fit(x, list(range(x.shape[0])))
+
+    def export_to_onnx(self, model_path):
+        dummy_input = torch.randn(1, 3, *self.crop_size).to(self.device)
+        torch.onnx.export(
+            self.model,
+            dummy_input,
+            model_path,
+            export_params=True,
+            opset_version=10,
+            do_constant_folding=True,
+            input_names=["input"],
+            output_names=["feature", "norm"],
+        )
 
     def _extract_features(self, img):
         if isinstance(img, PIL.Image.Image):
